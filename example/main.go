@@ -67,5 +67,76 @@ print("This won't execute")
 		fmt.Printf("File execution error: %v\n", err)
 	}
 
-	fmt.Println("\nPhase 2 implementation complete!")
+	// Phase 3: Function calling and type conversion
+	fmt.Println("\n=== Phase 3: Function Calling ===")
+
+	// Create a test module by running a string first
+	fmt.Println("Creating test module...")
+	moduleCode := `
+def add_numbers(a, b):
+    return a + b
+
+def process_list(items):
+    return [x * 2 for x in items]
+
+def get_info():
+    return {
+        "name": "Python Module", 
+        "version": "1.0",
+        "features": ["functions", "lists", "dicts"]
+    }
+
+def greet(name):
+    return f"Hello, {name}!"
+`
+	if err := py.RunString(moduleCode); err != nil {
+		log.Printf("Error creating module: %v", err)
+	}
+
+	// Test function calling with different types
+	fmt.Println("\nTesting function calls...")
+
+	// Test simple function with numbers
+	result, err := py.CallFunction("__main__", "add_numbers", 10, 25)
+	if err != nil {
+		fmt.Printf("Error calling add_numbers: %v\n", err)
+	} else {
+		fmt.Printf("add_numbers(10, 25) = %v (type: %T)\n", result, result)
+	}
+
+	// Test function with string argument
+	result, err = py.CallFunction("__main__", "greet", "Go Developer")
+	if err != nil {
+		fmt.Printf("Error calling greet: %v\n", err)
+	} else {
+		fmt.Printf("greet(\"Go Developer\") = %v\n", result)
+	}
+
+	// Test function with list argument and return
+	list := []interface{}{1, 2, 3, 4, 5}
+	result, err = py.CallFunction("__main__", "process_list", list)
+	if err != nil {
+		fmt.Printf("Error calling process_list: %v\n", err)
+	} else {
+		fmt.Printf("process_list(%v) = %v\n", list, result)
+	}
+
+	// Test function returning dictionary
+	result, err = py.CallFunction("__main__", "get_info")
+	if err != nil {
+		fmt.Printf("Error calling get_info: %v\n", err)
+	} else {
+		fmt.Printf("get_info() = %v (type: %T)\n", result, result)
+	}
+
+	// Test calling built-in modules
+	fmt.Println("\nTesting built-in module calls...")
+	result, err = py.CallFunction("math", "sqrt", 16.0)
+	if err != nil {
+		fmt.Printf("Error calling math.sqrt: %v\n", err)
+	} else {
+		fmt.Printf("math.sqrt(16.0) = %v\n", result)
+	}
+
+	fmt.Println("\nPhase 3 implementation complete!")
 }
