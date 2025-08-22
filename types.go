@@ -31,7 +31,6 @@ type PureGoPython struct {
 
 	// Code execution functions
 	pyRunSimpleString func(*byte) int
-	pyRunSimpleFile   func(uintptr, *byte) int
 
 	// Module and import functions
 	pyImportImport      func(uintptr) uintptr
@@ -88,9 +87,6 @@ type PureGoPython struct {
 	pyErrOccurred func() uintptr
 	pyErrFetch    func(*uintptr, *uintptr, *uintptr)
 	pyErrClear    func()
-
-	// File operations
-	pyFileFromFd func(int, *byte, *byte, int, *byte, *byte, *byte, int) uintptr
 
 	// GIL functions (for future use if needed)
 	pyGILStateEnsure  func() int

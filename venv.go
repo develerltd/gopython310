@@ -62,36 +62,26 @@ func (py *PureGoPython) addSiteDirectories(config VirtualEnvConfig) error {
 
 	// Configure virtual environment properly
 	if config.VenvPath != "" {
-		venvLibDir := filepath.Join(config.VenvPath, "lib")
-		var venvSitePackages string
-		
-		if entries, err := os.ReadDir(venvLibDir); err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() && (entry.Name() == "python3.10" || entry.Name()[:6] == "python") {
-					sitePackages := filepath.Join(venvLibDir, entry.Name(), "site-packages")
-					if _, err := os.Stat(sitePackages); err == nil {
-						venvSitePackages = sitePackages
-						break
-					}
-				}
-			}
+		// Use platform-aware site-packages detection
+		venvSitePackages, err := GetVenvSitePackagesPath(config.VenvPath)
+		if err != nil {
+			return fmt.Errorf("failed to locate venv site-packages: %v", err)
 		}
 		
-		if venvSitePackages != "" {
-			// Set VIRTUAL_ENV environment variable for proper venv detection
-			siteCode += fmt.Sprintf("os.environ['VIRTUAL_ENV'] = r'%s'\n", config.VenvPath)
-			
-			// Clean sys.path to only include essential paths
-			siteCode += fmt.Sprintf("venv_site_packages = r'%s'\n", venvSitePackages)
-			siteCode += `
-# Save essential Python paths (stdlib only)
+		// Set VIRTUAL_ENV environment variable for proper venv detection
+		siteCode += fmt.Sprintf("os.environ['VIRTUAL_ENV'] = r'%s'\n", config.VenvPath)
+		
+		// Clean sys.path to only include essential paths
+		siteCode += fmt.Sprintf("venv_site_packages = r'%s'\n", venvSitePackages)
+		siteCode += `
+# Save essential Python paths (stdlib only) - platform independent
 essential_paths = []
 for path in sys.path:
-    # Keep only essential Python standard library paths
+    # Keep only essential Python standard library paths, exclude site-packages
     if (path.endswith('python310.zip') or 
         path.endswith('python3.10') or 
         path.endswith('lib-dynload') or
-        path == ''):  # Empty string is current directory
+        path == '') and 'site-packages' not in path:  # Only stdlib, no site-packages
         essential_paths.append(path)
 
 # Replace sys.path with clean virtual environment setup
@@ -112,7 +102,6 @@ except:
     pass  # Ignore if getsitepackages() fails
 `
 			}
-		}
 	}
 
 	// Add custom site paths to the beginning as well

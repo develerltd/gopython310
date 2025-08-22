@@ -19,7 +19,6 @@ func (py *PureGoPython) registerPythonFunctions() error {
 
 	// Code execution functions
 	purego.RegisterLibFunc(&py.pyRunSimpleString, py.libHandle, "PyRun_SimpleString")
-	purego.RegisterLibFunc(&py.pyRunSimpleFile, py.libHandle, "PyRun_SimpleFile")
 
 	// Module and import functions
 	purego.RegisterLibFunc(&py.pyImportImport, py.libHandle, "PyImport_Import")
@@ -76,9 +75,6 @@ func (py *PureGoPython) registerPythonFunctions() error {
 	purego.RegisterLibFunc(&py.pyErrOccurred, py.libHandle, "PyErr_Occurred")
 	purego.RegisterLibFunc(&py.pyErrFetch, py.libHandle, "PyErr_Fetch")
 	purego.RegisterLibFunc(&py.pyErrClear, py.libHandle, "PyErr_Clear")
-
-	// File operations
-	purego.RegisterLibFunc(&py.pyFileFromFd, py.libHandle, "PyFile_FromFd")
 
 	// GIL functions (for future use if needed)
 	purego.RegisterLibFunc(&py.pyGILStateEnsure, py.libHandle, "PyGILState_Ensure")

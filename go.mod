@@ -1,4 +1,4 @@
-module gopython
+module github.com/develerltd/gopython310
 
 go 1.24.2
 

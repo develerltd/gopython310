@@ -1,82 +1,14 @@
-# Go-Python Library (Phase 1-3)
+# Go-Python Library
 
 A Go library that enables calling Python 3.10 functions using the Ebitengine purego interface to bind CPython C API without Cgo.
 
-## Phase 1: Foundation ✅
+## Features
 
-This phase implements basic Python interpreter lifecycle management:
-
-- ✅ Initialize Go module structure
-- ✅ Add purego dependency  
-- ✅ Create basic package layout
-- ✅ Load libpython using purego.Dlopen() with user-provided path
-- ✅ Register essential CPython functions via purego.RegisterLibFunc()
-- ✅ Create function pointer wrappers for type safety
-- ✅ Implement Py_Initialize() wrapper
-- ✅ Implement Py_FinalizeEx() wrapper
-- ✅ Add basic error handling for initialization failures
-- ✅ Create PureGoPython struct with lifecycle methods
-
-**Deliverable**: Can initialize and cleanup Python interpreter ✅
-
-## Phase 2: Execution Layer ✅
-
-This phase adds Python code execution capabilities:
-
-- ✅ Implement PyRun_SimpleString() wrapper
-- ✅ Add Go string to C string conversion
-- ✅ Handle execution success/failure return codes
-- ✅ Implement PyRun_SimpleFile() wrapper
-- ✅ Add file handling and validation
-- ✅ Handle file not found and permission errors
-- ✅ Capture Python exceptions using PyErr_Occurred()
-- ✅ Convert Python errors to Go errors
-- ✅ Add error message extraction from Python
-
-**Deliverable**: Can run Python strings and files, get basic error feedback ✅
-
-## Phase 3: Advanced Features ✅
-
-This phase adds function calling and bidirectional type conversion:
-
-- ✅ Implement PyImport_Import() for module loading
-- ✅ Add PyObject_GetAttr() for function lookup
-- ✅ Implement PyObject_CallObject() wrapper
-- ✅ Create argument tuple building
-- ✅ Go → Python converters (string, int, float, bool, slices, maps)
-- ✅ Python → Go converters (all basic and complex types)
-- ✅ Handle complex types (slices ↔ lists, maps ↔ dicts)
-- ✅ Add type checking functions (PyUnicode_Check, PyLong_Check, etc.)
-- ✅ Implement Py_DECREF() and Py_XDECREF() wrappers
-- ✅ Add reference counting to conversion functions
-- ✅ Create cleanup mechanisms for Go-created Python objects
-
-**Deliverable**: Can call Python functions with arguments and get typed return values ✅
-
-## Phase 4: Production Ready (Partial) ✅
-
-This phase focuses on making the library production-ready with concurrency safety:
-
-- ✅ Research Python GIL interaction with goroutines
-- ✅ Implement thread-safe interpreter access using PyGILState management
-- ✅ Add synchronization for multi-goroutine usage with mutex protection
-- ✅ Add GIL state management functions (PyGILState_Ensure/Release)
-- ✅ Create thread-safe wrappers for Python calls
-- ✅ Test concurrent access scenarios
-- 🔄 Handle interpreter state isolation (future work)
-- 🔄 Performance optimization (future work)
-- 🔄 Comprehensive testing suite (future work)
-
-**Deliverable**: Thread-safe Python calls from multiple goroutines ✅
-
-## Thread Safety
-
-The library is now **fully thread-safe** for concurrent access from multiple goroutines:
-
-- **GIL Management**: Proper PyGILState_Ensure/Release for thread safety
-- **Mutex Protection**: Go mutex serializes access to Python interpreter
-- **Safe Reference Counting**: Protected memory management across threads
-- **Concurrent Function Calls**: Multiple goroutines can safely call Python functions
+- **No Cgo Required**: Uses purego to bind CPython C API directly
+- **Thread-Safe**: Full concurrency support with proper GIL management
+- **Type Conversion**: Automatic Go ↔ Python type conversion for basic and complex types
+- **Virtual Environment Support**: Works with Python virtual environments
+- **Error Handling**: Proper Python exception handling and Go error conversion
 
 ## Usage
 
@@ -138,6 +70,7 @@ print(f"2 + 3 = {x}")
 
 ## Running the Examples
 
+### Linux
 ```bash
 # Find your libpython3.10.so location first
 find /usr -name "libpython3.10.so*" 2>/dev/null
@@ -152,10 +85,48 @@ go run examples/concurrent/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.
 go run examples/venv/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0 /path/to/your/venv
 ```
 
+### macOS
+```bash
+# Homebrew Python
+go run examples/basic/main.go /opt/homebrew/lib/libpython3.10.dylib
+
+# Or with pyenv
+go run examples/basic/main.go ~/.pyenv/versions/3.10.15/lib/libpython3.10.dylib
+
+# Virtual environment example (macOS)
+go run examples/venv/main.go /opt/homebrew/lib/libpython3.10.dylib /path/to/your/venv
+```
+
+
+### Finding Python Libraries
+
+**Linux:**
+```bash
+# Ubuntu/Debian
+find /usr -name "libpython3.10.so*" 2>/dev/null
+
+# Or check with pkg-config
+pkg-config --libs python3.10
+```
+
+**macOS:**
+```bash
+# Homebrew
+ls /opt/homebrew/lib/libpython3.10.dylib
+ls /usr/local/lib/libpython3.10.dylib
+
+# pyenv
+ls ~/.pyenv/versions/*/lib/libpython3.10.dylib
+
+# System Python (if available)
+ls /Library/Frameworks/Python.framework/Versions/3.10/lib/libpython3.10.dylib
+```
+
 ## API Reference
 
 ### `NewPureGoPython(libpythonPath string) (*PureGoPython, error)`
 Creates a new Python runtime instance by loading the specified libpython library.
+
 
 ### `Initialize() error`
 Initializes the Python interpreter. Must be called before any Python operations.
@@ -258,10 +229,11 @@ go run examples/concurrent/main.go /path/to/libpython3.10.so
 
 See [LIMITATIONS.md](LIMITATIONS.md) for detailed information and workarounds.
 
-## Next Steps
+## Thread Safety
 
-Future enhancements could include:
-- Sub-interpreter support for true isolation  
-- Performance optimizations and benchmarking
-- Comprehensive test suite with edge cases
-- Production monitoring and metrics
+The library is fully thread-safe for concurrent access from multiple goroutines:
+
+- **GIL Management**: Proper PyGILState_Ensure/Release for thread safety
+- **Mutex Protection**: Go mutex serializes access to Python interpreter
+- **Safe Reference Counting**: Protected memory management across threads
+- **Concurrent Function Calls**: Multiple goroutines can safely call Python functions

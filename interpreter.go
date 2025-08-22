@@ -10,6 +10,11 @@ import (
 
 // NewPureGoPython creates a new Python runtime instance
 func NewPureGoPython(libpythonPath string) (*PureGoPython, error) {
+	// Validate library path for current platform
+	if err := ValidateLibraryPath(libpythonPath); err != nil {
+		return nil, fmt.Errorf("invalid library path: %v", err)
+	}
+
 	// Load the Python library
 	libHandle, err := purego.Dlopen(libpythonPath, purego.RTLD_NOW)
 	if err != nil {
@@ -32,6 +37,7 @@ func NewPureGoPython(libpythonPath string) (*PureGoPython, error) {
 
 	return py, nil
 }
+
 
 // Initialize initializes the Python interpreter with default system configuration
 func (py *PureGoPython) Initialize() error {
@@ -134,23 +140,13 @@ func (py *PureGoPython) RunFile(filename string) error {
 		return fmt.Errorf("file does not exist: %s", filename)
 	}
 
-	return py.withGIL(func() error {
-		// Open file using Python's file handling
-		cFilename := stringToCString(filename)
-		cMode := stringToCString("r")
-		
-		file := py.pyFileFromFd(-1, cFilename, cMode, -1, nil, nil, nil, 1)
-		if file == 0 {
-			return fmt.Errorf("failed to open file: %s", filename)
-		}
-		defer py.safeDecRef(file)
+	// Read file content and execute as string (simpler and more reliable)
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %v", filename, err)
+	}
 
-		result := py.pyRunSimpleFile(file, cFilename)
-		if result != 0 {
-			return py.getPythonError()
-		}
-		return nil
-	})
+	return py.RunString(string(content))
 }
 
 // CallFunction calls a Python function with the given arguments

@@ -64,8 +64,15 @@ package gopython
 // NewPureGoPython creates a new Python runtime instance by loading the specified
 // libpython library. The libpythonPath should point to a valid Python 3.10 shared library.
 //
-// Example:
+// Examples:
+//   // Linux
 //   py, err := gopython.NewPureGoPython("/usr/lib/x86_64-linux-gnu/libpython3.10.so")
+//   
+//   // macOS
+//   py, err := gopython.NewPureGoPython("/opt/homebrew/lib/libpython3.10.dylib")
+//   
+//   // Windows
+//   py, err := gopython.NewPureGoPython("C:\\Python310\\python310.dll")
 //
 // The function loads the library, registers all CPython API functions, and validates
 // that critical functions are available. Returns an error if the library cannot be
