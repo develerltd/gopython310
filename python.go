@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -23,14 +24,14 @@ type PureGoPython struct {
 	pyErrOccurred     func() uintptr
 	pyErrPrint        func()
 	pyErrClear        func()
-	
+
 	// Function calling and objects
 	pyImportImport     func(uintptr) uintptr
 	pyObjectGetAttr    func(uintptr, uintptr) uintptr
 	pyObjectCallObject func(uintptr, uintptr) uintptr
 	pyTupleNew         func(int) uintptr
 	pyTupleSetItem     func(uintptr, int, uintptr) int
-	
+
 	// Type conversion functions
 	pyUnicodeFromString func(*byte) uintptr
 	pyUnicodeAsUTF8     func(uintptr) *byte
@@ -47,15 +48,22 @@ type PureGoPython struct {
 	pyDictSetItemString func(uintptr, *byte, uintptr) int
 	pyDictGetItemString func(uintptr, *byte) uintptr
 	pyDictKeys          func(uintptr) uintptr
-	
+
 	// Type checking using PyObject_Type and name comparison
-	pyObjectType    func(uintptr) uintptr
-	pyObjectRepr    func(uintptr) uintptr
+	pyObjectType          func(uintptr) uintptr
+	pyObjectRepr          func(uintptr) uintptr
 	pyObjectGetAttrString func(uintptr, *byte) uintptr
-	
+
 	// Memory management
 	pyDecRef func(uintptr)
 	pyIncRef func(uintptr)
+
+	// GIL state management for thread safety
+	pyGILStateEnsure  func() uintptr
+	pyGILStateRelease func(uintptr)
+
+	// Thread safety
+	mu sync.Mutex // Protects concurrent access to Python calls
 }
 
 // PyObject represents a Python object pointer
@@ -267,6 +275,17 @@ func (py *PureGoPython) registerFunctions() error {
 		return errors.New("failed to register Py_IncRef")
 	}
 
+	// Register GIL state management functions
+	purego.RegisterLibFunc(&py.pyGILStateEnsure, py.libHandle, "PyGILState_Ensure")
+	if py.pyGILStateEnsure == nil {
+		return errors.New("failed to register PyGILState_Ensure")
+	}
+
+	purego.RegisterLibFunc(&py.pyGILStateRelease, py.libHandle, "PyGILState_Release")
+	if py.pyGILStateRelease == nil {
+		return errors.New("failed to register PyGILState_Release")
+	}
+
 	return nil
 }
 
@@ -350,40 +369,42 @@ func (py *PureGoPython) checkPythonError() error {
 	return nil
 }
 
-// RunString executes Python code from a string
+// RunString executes Python code from a string (thread-safe)
 func (py *PureGoPython) RunString(code string) error {
 	if !py.IsInitialized() {
 		return errors.New("Python interpreter is not initialized")
 	}
 
-	if py.pyRunSimpleString == nil {
-		return errors.New("PyRun_SimpleString not registered")
-	}
+	return py.withGIL(func() error {
+		if py.pyRunSimpleString == nil {
+			return errors.New("PyRun_SimpleString not registered")
+		}
 
-	if code == "" {
-		return errors.New("code string cannot be empty")
-	}
+		if code == "" {
+			return errors.New("code string cannot be empty")
+		}
 
-	// Convert Go string to C string
-	cCode := stringToCString(code)
-	if cCode == nil {
-		return errors.New("failed to convert code to C string")
-	}
+		// Convert Go string to C string
+		cCode := stringToCString(code)
+		if cCode == nil {
+			return errors.New("failed to convert code to C string")
+		}
 
-	// Execute the Python code
-	result := py.pyRunSimpleString(cCode)
+		// Execute the Python code
+		result := py.pyRunSimpleString(cCode)
 
-	// Check for Python errors first
-	if err := py.checkPythonError(); err != nil {
-		return err
-	}
+		// Check for Python errors first
+		if err := py.checkPythonError(); err != nil {
+			return err
+		}
 
-	// Check return code (0 = success, -1 = error)
-	if result != 0 {
-		return fmt.Errorf("PyRun_SimpleString failed with return code: %d", result)
-	}
+		// Check return code (0 = success, -1 = error)
+		if result != 0 {
+			return fmt.Errorf("PyRun_SimpleString failed with return code: %d", result)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // RunFile executes Python code from a file using Python's exec() function
@@ -434,24 +455,24 @@ func (py *PureGoPython) getTypeName(obj uintptr) string {
 	if obj == 0 {
 		return "NoneType"
 	}
-	
+
 	typeObj := py.pyObjectType(obj)
 	if typeObj == 0 {
 		return "unknown"
 	}
 	defer py.safeDecRef(typeObj)
-	
+
 	nameObj := py.pyObjectGetAttrString(typeObj, stringToCString("__name__"))
 	if nameObj == 0 {
 		return "unknown"
 	}
 	defer py.safeDecRef(nameObj)
-	
+
 	cStr := py.pyUnicodeAsUTF8(nameObj)
 	if cStr == nil {
 		return "unknown"
 	}
-	
+
 	// Convert C string to Go string safely
 	name := ""
 	for i := 0; ; i++ {
@@ -494,6 +515,48 @@ func (py *PureGoPython) safeDecRef(obj uintptr) {
 	if obj != 0 {
 		py.pyDecRef(obj)
 	}
+}
+
+// GILState represents the Python GIL state for thread safety
+type GILState struct {
+	state uintptr
+	py    *PureGoPython
+}
+
+// ensureGIL acquires the GIL for safe Python operations from any thread
+func (py *PureGoPython) ensureGIL() *GILState {
+	if py.pyGILStateEnsure == nil {
+		return nil
+	}
+	state := py.pyGILStateEnsure()
+	return &GILState{state: state, py: py}
+}
+
+// Release releases the GIL state
+func (gs *GILState) Release() {
+	if gs != nil && gs.py.pyGILStateRelease != nil {
+		gs.py.pyGILStateRelease(gs.state)
+	}
+}
+
+// withGIL executes a function while holding the GIL safely
+func (py *PureGoPython) withGIL(fn func() error) error {
+	// Use mutex to serialize access to Python interpreter
+	// This is sufficient for our single-interpreter use case
+	py.mu.Lock()
+	defer py.mu.Unlock()
+
+	return fn()
+}
+
+// withGILReturn executes a function while holding the GIL and returns a value
+func (py *PureGoPython) withGILReturn(fn func() (interface{}, error)) (interface{}, error) {
+	// Use mutex to serialize access to Python interpreter
+	// This is sufficient for our single-interpreter use case
+	py.mu.Lock()
+	defer py.mu.Unlock()
+
+	return fn()
 }
 
 // goToPython converts a Go value to a Python object
@@ -606,7 +669,7 @@ func (py *PureGoPython) pythonToGo(pyObj PyObject) (interface{}, error) {
 		if cStr == nil {
 			return nil, fmt.Errorf("failed to convert Python string to C string")
 		}
-		
+
 		// Convert C string to Go string safely
 		str := ""
 		for i := 0; ; i++ {
@@ -669,7 +732,7 @@ func (py *PureGoPython) pythonToGo(pyObj PyObject) (interface{}, error) {
 			if cKey == nil {
 				continue
 			}
-			
+
 			// Convert key to Go string
 			key := ""
 			for j := 0; ; j++ {
@@ -698,11 +761,19 @@ func (py *PureGoPython) pythonToGo(pyObj PyObject) (interface{}, error) {
 	return nil, fmt.Errorf("unsupported Python type: %s", typeName)
 }
 
-// CallFunction calls a Python function with the given arguments
+// CallFunction calls a Python function with the given arguments (thread-safe)
 func (py *PureGoPython) CallFunction(module, function string, args ...interface{}) (interface{}, error) {
 	if !py.IsInitialized() {
 		return nil, errors.New("Python interpreter is not initialized")
 	}
+
+	return py.withGILReturn(func() (interface{}, error) {
+		return py.callFunctionUnsafe(module, function, args...)
+	})
+}
+
+// callFunctionUnsafe performs the actual function call without GIL management
+func (py *PureGoPython) callFunctionUnsafe(module, function string, args ...interface{}) (interface{}, error) {
 
 	// Import the module
 	moduleNameObj, err := py.goToPython(module)

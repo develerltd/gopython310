@@ -63,7 +63,7 @@ print("This won't execute")
 
 	// Test file execution
 	fmt.Println("\nTesting file execution...")
-	if err := py.RunFile("example/test.py"); err != nil {
+	if err := py.RunFile("examples/basic/test.py"); err != nil {
 		fmt.Printf("File execution error: %v\n", err)
 	}
 
