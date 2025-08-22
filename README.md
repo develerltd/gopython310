@@ -225,10 +225,24 @@ Run the concurrent test suite:
 go run examples/concurrent/main.go /path/to/libpython3.10.so
 ```
 
+## Limitations
+
+**Important**: Some Python features don't work in embedded environments:
+
+- ❌ **`multiprocessing` module** - Cannot spawn new Python processes
+- ⚠️ **`subprocess` operations** - May behave unexpectedly  
+- ✅ **`threading` module** - Works fine as alternative
+- ✅ **`concurrent.futures.ThreadPoolExecutor`** - Recommended for parallelism
+- ✅ **Most libraries** - NumPy, SciPy, Pandas, etc. work perfectly
+
+**Workaround**: Use Go goroutines for parallelism with our thread-safe library!
+
+See [LIMITATIONS.md](LIMITATIONS.md) for detailed information and workarounds.
+
 ## Next Steps
 
 Future enhancements could include:
-- Sub-interpreter support for true isolation
+- Sub-interpreter support for true isolation  
 - Performance optimizations and benchmarking
 - Comprehensive test suite with edge cases
 - Production monitoring and metrics

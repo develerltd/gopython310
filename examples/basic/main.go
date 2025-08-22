@@ -139,4 +139,11 @@ def greet(name):
 	}
 
 	fmt.Println("\nPhase 3 implementation complete!")
+
+	// Test limitations and compatibility
+	fmt.Println("\n=== Testing Limitations and Compatibility ===")
+	fmt.Println("Running compatibility tests...")
+	if err := py.RunFile("examples/basic/test_limitations.py"); err != nil {
+		fmt.Printf("Limitations test error: %v\n", err)
+	}
 }
