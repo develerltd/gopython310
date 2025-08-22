@@ -147,6 +147,9 @@ go run examples/basic/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0
 
 # Run the concurrent safety test
 go run examples/concurrent/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0
+
+# Run the virtual environment example
+go run examples/venv/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0 /path/to/your/venv
 ```
 
 ## API Reference
@@ -159,6 +162,22 @@ Initializes the Python interpreter. Must be called before any Python operations.
 
 ### `Finalize() error` 
 Shuts down the Python interpreter and cleans up resources.
+
+### `Initialize() error`
+Initializes the Python interpreter with default system configuration.
+
+### `InitializeWithVenv(config VirtualEnvConfig) error`
+Initializes the Python interpreter with virtual environment support.
+
+```go
+config := gopython.VirtualEnvConfig{
+    VenvPath:   "/path/to/venv",     // Virtual environment directory
+    SystemSite: true,                // Include system packages
+    SitePaths:  []string{},          // Additional package directories
+    PythonHome: "",                  // Python installation directory (optional)
+}
+err := py.InitializeWithVenv(config)
+```
 
 ### `IsInitialized() bool`
 Returns true if the Python interpreter is currently initialized.

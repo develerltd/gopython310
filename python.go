@@ -57,6 +57,12 @@ type PureGoPython struct {
 	// Memory management
 	pyDecRef func(uintptr)
 	pyIncRef func(uintptr)
+	
+	// Path configuration for virtual environments
+	pySetPath        func(*uint16)   // Windows wide string
+	pySetPythonHome  func(*uint16)   // Windows wide string  
+	pySetPathLinux   func(*byte)     // Linux/Unix byte string
+	pySetPythonHomeLinux func(*byte) // Linux/Unix byte string
 
 	// GIL state management for thread safety
 	pyGILStateEnsure  func() uintptr
@@ -69,9 +75,18 @@ type PureGoPython struct {
 // PyObject represents a Python object pointer
 type PyObject uintptr
 
+// VirtualEnvConfig represents virtual environment configuration
+type VirtualEnvConfig struct {
+	VenvPath      string   // Path to virtual environment (e.g., "/path/to/myenv")
+	SitePaths     []string // Additional site-packages directories
+	SystemSite    bool     // Include system site-packages
+	PythonHome    string   // Python home directory (optional)
+}
+
 // PyRuntime interface defines the core Python runtime operations
 type PyRuntime interface {
 	Initialize() error
+	InitializeWithVenv(config VirtualEnvConfig) error
 	Finalize() error
 	IsInitialized() bool
 	RunString(code string) error
@@ -286,6 +301,13 @@ func (py *PureGoPython) registerFunctions() error {
 		return errors.New("failed to register PyGILState_Release")
 	}
 
+	// Register path configuration functions (try both Linux and Windows variants)
+	purego.RegisterLibFunc(&py.pySetPathLinux, py.libHandle, "Py_SetPath")
+	purego.RegisterLibFunc(&py.pySetPythonHomeLinux, py.libHandle, "Py_SetPythonHome")
+	
+	// Note: Windows uses wide strings, but we'll focus on Linux/Unix for now
+	// Windows support would require UTF-16 conversion
+
 	return nil
 }
 
@@ -310,6 +332,142 @@ func (py *PureGoPython) Initialize() error {
 	return nil
 }
 
+// InitializeWithVenv initializes Python with virtual environment support
+func (py *PureGoPython) InitializeWithVenv(config VirtualEnvConfig) error {
+	if py.pyInitialize == nil {
+		return errors.New("Python functions not registered")
+	}
+
+	// Check if already initialized
+	if py.IsInitialized() {
+		return errors.New("Python interpreter is already initialized")
+	}
+
+	// Configure Python paths before initialization
+	if err := py.configureVirtualEnvironment(config); err != nil {
+		return fmt.Errorf("failed to configure virtual environment: %v", err)
+	}
+
+	// Initialize Python
+	py.pyInitialize()
+
+	// Verify initialization succeeded
+	if !py.IsInitialized() {
+		return errors.New("Python interpreter initialization failed")
+	}
+
+	// Add additional site directories after initialization
+	if err := py.addSiteDirectories(config); err != nil {
+		return fmt.Errorf("failed to add site directories: %v", err)
+	}
+
+	return nil
+}
+
+// configureVirtualEnvironment validates the virtual environment exists
+func (py *PureGoPython) configureVirtualEnvironment(config VirtualEnvConfig) error {
+	if config.VenvPath == "" {
+		return errors.New("virtual environment path cannot be empty")
+	}
+
+	// Check if virtual environment exists
+	if _, err := os.Stat(config.VenvPath); os.IsNotExist(err) {
+		return fmt.Errorf("virtual environment does not exist: %s", config.VenvPath)
+	}
+
+	// Validate that it looks like a proper venv
+	venvLibDir := filepath.Join(config.VenvPath, "lib")
+	if _, err := os.Stat(venvLibDir); os.IsNotExist(err) {
+		return fmt.Errorf("invalid virtual environment: missing lib directory in %s", config.VenvPath)
+	}
+
+	// All path configuration will be done after initialization using site.addsitedir()
+	// This avoids the Unicode encoding issues with Py_SetPath()
+	return nil
+}
+
+// addSiteDirectories adds additional site directories after initialization
+func (py *PureGoPython) addSiteDirectories(config VirtualEnvConfig) error {
+	if len(config.SitePaths) == 0 && config.VenvPath == "" {
+		return nil
+	}
+
+	// Import required modules
+	siteCode := "import sys\nimport os\n"
+
+	// Configure virtual environment properly
+	if config.VenvPath != "" {
+		venvLibDir := filepath.Join(config.VenvPath, "lib")
+		var venvSitePackages string
+		
+		if entries, err := os.ReadDir(venvLibDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && (entry.Name() == "python3.10" || entry.Name()[:6] == "python") {
+					sitePackages := filepath.Join(venvLibDir, entry.Name(), "site-packages")
+					if _, err := os.Stat(sitePackages); err == nil {
+						venvSitePackages = sitePackages
+						break
+					}
+				}
+			}
+		}
+		
+		if venvSitePackages != "" {
+			// Set VIRTUAL_ENV environment variable for proper venv detection
+			siteCode += fmt.Sprintf("os.environ['VIRTUAL_ENV'] = r'%s'\n", config.VenvPath)
+			
+			// Clean sys.path to only include essential paths
+			siteCode += fmt.Sprintf("venv_site_packages = r'%s'\n", venvSitePackages)
+			siteCode += `
+# Save essential Python paths (stdlib only)
+essential_paths = []
+for path in sys.path:
+    # Keep only essential Python standard library paths
+    if (path.endswith('python310.zip') or 
+        path.endswith('python3.10') or 
+        path.endswith('lib-dynload') or
+        path == ''):  # Empty string is current directory
+        essential_paths.append(path)
+
+# Replace sys.path with clean virtual environment setup
+sys.path = [venv_site_packages] + essential_paths
+`
+			
+			// Optionally add system site packages if SystemSite is True
+			if config.SystemSite {
+				siteCode += `
+# Add system site packages as fallback (SystemSite=True)
+import site
+try:
+    system_site_packages = site.getsitepackages()
+    for path in system_site_packages:
+        if path not in sys.path:
+            sys.path.append(path)
+except:
+    pass  # Ignore if getsitepackages() fails
+`
+			}
+		}
+	}
+
+	// Add custom site paths to the beginning as well
+	for _, path := range config.SitePaths {
+		siteCode += fmt.Sprintf("custom_path = r'%s'\n", path)
+		siteCode += "if custom_path not in sys.path:\n"
+		siteCode += "    sys.path.insert(0, custom_path)\n"
+	}
+
+	// Execute the site configuration
+	return py.withGIL(func() error {
+		cCode := stringToCString(siteCode)
+		result := py.pyRunSimpleString(cCode)
+		if result != 0 {
+			return fmt.Errorf("failed to configure site directories")
+		}
+		return nil
+	})
+}
+
 // Finalize shuts down the Python interpreter
 func (py *PureGoPython) Finalize() error {
 	if py.pyFinalizeEx == nil {
@@ -319,6 +477,44 @@ func (py *PureGoPython) Finalize() error {
 	if !py.IsInitialized() {
 		return errors.New("Python interpreter is not initialized")
 	}
+
+	// Try to clean up any remaining Python objects and threads
+	py.withGIL(func() error {
+		cleanupCode := `
+import gc
+import threading
+import sys
+
+# Force garbage collection
+gc.collect()
+
+# Try to join any remaining threads (except main thread)
+main_thread = threading.main_thread()
+for thread in threading.enumerate():
+    if thread != main_thread and thread.is_alive():
+        try:
+            if hasattr(thread, 'join'):
+                thread.join(timeout=0.1)  # Short timeout
+        except:
+            pass  # Ignore join errors
+
+# Clear any remaining modules and references
+if hasattr(sys, 'modules'):
+    modules_to_clear = [name for name in sys.modules.keys() 
+                       if not name.startswith('__') and name not in ['sys', 'builtins']]
+    for name in modules_to_clear:
+        try:
+            del sys.modules[name]
+        except:
+            pass
+
+# Final garbage collection
+gc.collect()
+`
+		cCode := stringToCString(cleanupCode)
+		py.pyRunSimpleString(cCode)
+		return nil
+	})
 
 	result := py.pyFinalizeEx()
 	if result < 0 {
