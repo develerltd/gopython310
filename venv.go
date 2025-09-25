@@ -70,7 +70,7 @@ func (py *PureGoPython) addSiteDirectories(config VirtualEnvConfig) error {
 		
 		// Set VIRTUAL_ENV environment variable for proper venv detection
 		siteCode += fmt.Sprintf("os.environ['VIRTUAL_ENV'] = r'%s'\n", config.VenvPath)
-		
+
 		// Clean sys.path to only include essential paths
 		siteCode += fmt.Sprintf("venv_site_packages = r'%s'\n", venvSitePackages)
 		siteCode += `
@@ -84,8 +84,12 @@ for path in sys.path:
         path == '') and 'site-packages' not in path:  # Only stdlib, no site-packages
         essential_paths.append(path)
 
-# Replace sys.path with clean virtual environment setup
-sys.path = [venv_site_packages] + essential_paths
+# Replace sys.path with clean virtual environment setup (without venv site-packages)
+sys.path = essential_paths
+
+# Process .pth files using site module - this will add venv_site_packages and process .pth files
+import site
+site.addsitedir(venv_site_packages, set())
 `
 			
 			// Optionally add system site packages if SystemSite is True
