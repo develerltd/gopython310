@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"gopython"
+	"github.com/develerltd/gopython310"
 )
 
 func main() {

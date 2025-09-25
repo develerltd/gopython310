@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"gopython"
+	"github.com/develerltd/gopython310"
 )
 
 func main() {
