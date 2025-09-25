@@ -83,6 +83,9 @@ go run examples/concurrent/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.
 
 # Run the virtual environment example
 go run examples/venv/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0 /path/to/your/venv
+
+# Run the RunString with return values example
+go run examples/runstring_with_return/main.go /usr/lib/x86_64-linux-gnu/libpython3.10.so.1.0
 ```
 
 ### macOS
@@ -95,6 +98,9 @@ go run examples/basic/main.go ~/.pyenv/versions/3.10.15/lib/libpython3.10.dylib
 
 # Virtual environment example (macOS)
 go run examples/venv/main.go /opt/homebrew/lib/libpython3.10.dylib /path/to/your/venv
+
+# RunString with return values example (macOS)
+go run examples/runstring_with_return/main.go /opt/homebrew/lib/libpython3.10.dylib
 ```
 
 
@@ -161,6 +167,9 @@ Executes Python code from a file. Validates file existence and handles errors.
 
 ### `CallFunction(module, function string, args ...interface{}) (interface{}, error)`
 Calls a Python function with automatic type conversion for arguments and return values.
+
+### `CallPyFunction[TRequest, TResponse any](py *PureGoPython, module, function string, request TRequest) (TResponse, error)`
+Type-safe generic wrapper for calling Python functions with compile-time type checking.
 
 **Supported Types:**
 - **Go → Python**: `string`, `int`, `int64`, `float64`, `bool`, `[]interface{}`, `map[string]interface{}`
@@ -237,3 +246,49 @@ The library is fully thread-safe for concurrent access from multiple goroutines:
 - **Mutex Protection**: Go mutex serializes access to Python interpreter
 - **Safe Reference Counting**: Protected memory management across threads
 - **Concurrent Function Calls**: Multiple goroutines can safely call Python functions
+
+## Type-Safe Generic Calls
+
+Use the generic `CallPyFunction` for compile-time type safety:
+
+```go
+// String input, string output
+greeting, err := gopython.CallPyFunction[string, string](
+    py, "__main__", "greet", "World")
+
+// Map input, int64 output
+data := map[string]interface{}{"a": 10, "b": 25}
+sum, err := gopython.CallPyFunction[map[string]interface{}, int64](
+    py, "__main__", "add_numbers", data)
+
+// Built-in math functions
+sqrt, err := gopython.CallPyFunction[float64, float64](
+    py, "math", "sqrt", 16.0)
+```
+
+## RunString with Return Values
+
+Combine `RunString` and `CallFunction` to execute Python code that returns values:
+
+```go
+// Define a Python function that returns data
+code := `
+def analyze_data():
+    result = {"processed": [x*2 for x in [1,2,3,4,5]], "count": 5}
+    return result
+`
+py.RunString(code)
+
+// Call it and get the result
+result, err := py.CallFunction("__main__", "analyze_data")
+// Or with type safety:
+result, err := gopython.CallPyFunction[interface{}, map[string]interface{}](
+    py, "__main__", "analyze_data", nil)
+```
+
+## Examples
+
+- **[Basic](./examples/basic/)**: Core functionality and type conversion
+- **[Concurrent](./examples/concurrent/)**: Thread-safe operations from multiple goroutines
+- **[Virtual Environment](./examples/venv/)**: Using Python virtual environments
+- **[RunString with Return](./examples/runstring_with_return/)**: Using RunString + CallFunction pattern for return values

@@ -206,6 +206,29 @@ func (py *PureGoPython) callFunctionUnsafe(module, function string, args ...inte
 	return py.pythonToGo(PyObject(resultObj))
 }
 
+// CallPyFunction calls a Python function with type-safe generics for request and response types
+func CallPyFunction[TRequest, TResponse any](py *PureGoPython, module, function string, request TRequest) (TResponse, error) {
+	var zero TResponse
+
+	if !py.IsInitialized() {
+		return zero, errors.New("Python interpreter is not initialized")
+	}
+
+	// Call the underlying CallFunction with the request
+	result, err := py.CallFunction(module, function, request)
+	if err != nil {
+		return zero, err
+	}
+
+	// Try to convert the result to the expected response type
+	response, ok := result.(TResponse)
+	if !ok {
+		return zero, fmt.Errorf("failed to convert result to %T: got %T", zero, result)
+	}
+
+	return response, nil
+}
+
 // getPythonError extracts Python error information
 func (py *PureGoPython) getPythonError() error {
 	if py.pyErrOccurred() == 0 {
