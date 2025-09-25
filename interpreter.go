@@ -15,8 +15,8 @@ func NewPureGoPython(libpythonPath string) (*PureGoPython, error) {
 		return nil, fmt.Errorf("invalid library path: %v", err)
 	}
 
-	// Load the Python library
-	libHandle, err := purego.Dlopen(libpythonPath, purego.RTLD_NOW)
+	// Load the Python library with RTLD_GLOBAL to export symbols for C extensions
+	libHandle, err := purego.Dlopen(libpythonPath, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load libpython from %s: %v", libpythonPath, err)
 	}
